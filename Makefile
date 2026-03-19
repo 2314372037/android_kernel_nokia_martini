@@ -22,6 +22,9 @@ LC_COLLATE=C
 LC_NUMERIC=C
 export LC_COLLATE LC_NUMERIC
 
+export CONFIG_NO_ERROR_ON_MISMATCH := y
+export CONFIG_SECTION_MISMATCH_WARN_ONLY := y
+
 # We are using a recursive build, so we need to do a little thinking
 # to get the ordering right.
 #
