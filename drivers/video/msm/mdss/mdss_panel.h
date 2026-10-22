@@ -253,6 +253,8 @@ struct fbc_panel_info {
 	u32 lossy_mode_idx;
 };
 
+#define MDSS_DSI_RST_SEQ_LEN 10
+
 struct mdss_panel_info {
 	u32 xres;
 	u32 yres;
@@ -280,6 +282,8 @@ struct mdss_panel_info {
 	u32 cont_splash_enabled;
 	struct ion_handle *splash_ihdl;
 	u32 panel_power_on;
+	u32 rst_seq[MDSS_DSI_RST_SEQ_LEN];
+	u32 rst_seq_len;
 
 	struct lcd_panel_info lcdc;
 	struct fbc_panel_info fbc;

@@ -16,6 +16,7 @@
 #include <linux/iopoll.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
+#include <linux/kernel.h>
 
 #include "mdss_mdp.h"
 #include "mdss_panel.h"
@@ -502,29 +503,43 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 int mdss_mdp_video_copy_splash_screen(struct mdss_panel_data *pdata)
 {
 	void *virt = NULL;
+	void __iomem *bl_fb_addr_va;
 	unsigned long bl_fb_addr = 0;
-	unsigned long *bl_fb_addr_va;
-	unsigned long  pipe_addr, pipe_src_size;
-	u32 height, width, rgb_size, bpp;
-	size_t size;
-	static struct ion_handle *ihdl;
+	u32 pipe_base = MDSS_MDP_REG_SSPP_OFFSET(3);
+	u32 height, width, rgb_size, bpp, stride, format;
+	size_t size, alloc_size;
+	struct ion_handle *ihdl;
 	struct ion_client *iclient = mdss_get_ionclient();
-	static ion_phys_addr_t phys;
+	ion_phys_addr_t phys;
+	int ret;
 
-	pipe_addr = MDSS_MDP_REG_SSPP_OFFSET(3) +
-		MDSS_MDP_REG_SSPP_SRC0_ADDR;
-	pipe_src_size =
-		MDSS_MDP_REG_SSPP_OFFSET(3) + MDSS_MDP_REG_SSPP_SRC_SIZE;
+	if (!pdata || !iclient)
+		return -EINVAL;
 
-	bpp        = 3;
-	rgb_size   = MDSS_MDP_REG_READ(pipe_src_size);
-	bl_fb_addr = MDSS_MDP_REG_READ(pipe_addr);
+	/* Read the same RGB_0 layout that lk2nd inherits from UEFI. */
+	rgb_size = MDSS_MDP_REG_READ(pipe_base +
+			MDSS_MDP_REG_SSPP_SRC_IMG_SIZE);
+	bl_fb_addr = MDSS_MDP_REG_READ(pipe_base +
+			MDSS_MDP_REG_SSPP_SRC0_ADDR);
+	format = MDSS_MDP_REG_READ(pipe_base + MDSS_MDP_REG_SSPP_SRC_FORMAT);
+	bpp = ((format >> 9) & 0x3) + 1;
+	stride = MDSS_MDP_REG_READ(pipe_base +
+			MDSS_MDP_REG_SSPP_SRC_YSTRIDE0) & 0xffff;
 
 	height = (rgb_size >> 16) & 0xffff;
 	width  = rgb_size & 0xffff;
-	size = PAGE_ALIGN(height * width * bpp);
-	pr_debug("%s:%d splash_height=%d splash_width=%d Buffer size=%d\n",
-			__func__, __LINE__, height, width, size);
+	if (!bl_fb_addr || !width || !height || bpp < 2 ||
+	    stride < width * bpp ||
+	    stride > (UINT_MAX - (PAGE_SIZE - 1)) / height) {
+		pr_err("invalid bootloader splash layout\n");
+		return -EINVAL;
+	}
+	size = PAGE_ALIGN(height * stride);
+	if (bl_fb_addr > ULONG_MAX - size)
+		return -EINVAL;
+
+	pr_info("bootloader splash: source=0x%lx, %ux%u, stride=%u, bpp=%u\n",
+		bl_fb_addr, width, height, stride, bpp);
 
 	ihdl = ion_alloc(iclient, size, SZ_1M,
 			ION_HEAP(ION_QSECOM_HEAP_ID), 0);
@@ -533,24 +548,46 @@ int mdss_mdp_video_copy_splash_screen(struct mdss_panel_data *pdata)
 		return -ENOMEM;
 	}
 
-	pdata->panel_info.splash_ihdl = ihdl;
-
 	virt = ion_map_kernel(iclient, ihdl);
-	ion_phys(iclient, ihdl, &phys, &size);
+	if (IS_ERR_OR_NULL(virt)) {
+		ret = virt ? PTR_ERR(virt) : -ENOMEM;
+		goto free_handle;
+	}
+	alloc_size = size;
+	ret = ion_phys(iclient, ihdl, &phys, &alloc_size);
+	if (ret)
+		goto unmap_kernel;
+	if (alloc_size < size) {
+		ret = -EINVAL;
+		goto unmap_kernel;
+	}
 
-	pr_debug("%s %d Allocating %u bytes at 0x%lx (%pa phys)\n",
-			__func__, __LINE__, size,
-			(unsigned long int)virt, &phys);
+	/* Martini's source framebuffer is excluded from Linux RAM. */
+	bl_fb_addr_va = ioremap(bl_fb_addr, size);
+	if (!bl_fb_addr_va) {
+		pr_err("unable to map bootloader splash at 0x%lx\n", bl_fb_addr);
+		ret = -ENOMEM;
+		goto unmap_kernel;
+	}
+	memcpy_fromio(virt, bl_fb_addr_va, size);
+	iounmap(bl_fb_addr_va);
+	ion_unmap_kernel(iclient, ihdl);
 
-	bl_fb_addr_va = (unsigned long *)ioremap(bl_fb_addr, size);
-
-	memcpy(virt, bl_fb_addr_va, size);
-
-	MDSS_MDP_REG_WRITE(pipe_addr, phys);
+	pdata->panel_info.splash_ihdl = ihdl;
+	wmb();
+	MDSS_MDP_REG_WRITE(pipe_base + MDSS_MDP_REG_SSPP_SRC0_ADDR, phys);
 	MDSS_MDP_REG_WRITE(MDSS_MDP_REG_CTL_FLUSH + MDSS_MDP_REG_CTL_OFFSET(0),
 			0x48);
+	wmb();
 
 	return 0;
+
+unmap_kernel:
+	ion_unmap_kernel(iclient, ihdl);
+free_handle:
+	ion_free(iclient, ihdl);
+	pr_err("unable to preserve bootloader splash: %d\n", ret);
+	return ret;
 }
 
 int mdss_mdp_video_reconfigure_splash_done(struct mdss_mdp_ctl *ctl)
@@ -564,8 +601,6 @@ int mdss_mdp_video_reconfigure_splash_done(struct mdss_mdp_ctl *ctl)
 	off = 0;
 
 	pdata = ctl->panel_data;
-
-	pdata->panel_info.cont_splash_enabled = 0;
 
 	ret = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_CONT_SPLASH_BEGIN,
 				      NULL);
@@ -583,9 +618,21 @@ int mdss_mdp_video_reconfigure_splash_done(struct mdss_mdp_ctl *ctl)
 
 	MDSS_MDP_REG_WRITE(off + MDSS_MDP_REG_INTF_TIMING_ENGINE_EN -
 			mdss_v2_intf_off, 0);
+	wmb();
 	/* wait for 1 VSYNC for the pipe to be unstaged */
 	msleep(20);
-	ion_free(iclient, pdata->panel_info.splash_ihdl);
+	if (MDSS_MDP_REG_READ(off + MDSS_MDP_REG_INTF_TIMING_ENGINE_EN -
+			mdss_v2_intf_off) & BIT(0)) {
+		pr_err("bootloader timing engine did not stop\n");
+		return -EBUSY;
+	}
+	pdata->panel_info.cont_splash_enabled = 0;
+	pr_info("bootloader video stopped on INTF%u\n",
+		ctl->intf_num - MDSS_MDP_INTF0);
+	if (pdata->panel_info.splash_ihdl) {
+		ion_free(iclient, pdata->panel_info.splash_ihdl);
+		pdata->panel_info.splash_ihdl = NULL;
+	}
 	ret = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_CONT_SPLASH_FINISH,
 			NULL);
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);

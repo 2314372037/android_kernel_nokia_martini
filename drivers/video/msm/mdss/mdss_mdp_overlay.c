@@ -761,8 +761,14 @@ static int mdss_mdp_overlay_start(struct msm_fb_data_type *mfd)
 	}
 
 	if (mfd->panel_info->cont_splash_enabled) {
-		mdss_mdp_ctl_splash_finish(mdp5_data->ctl);
-		mdss_mdp_footswitch_ctrl_splash(0);
+		rc = mdss_mdp_ctl_splash_finish(mdp5_data->ctl);
+		if (!mfd->panel_info->cont_splash_enabled)
+			mdss_mdp_footswitch_ctrl_splash(0);
+		if (rc) {
+			pr_err("bootloader display handoff failed rc=%d\n", rc);
+			pm_runtime_put(&mfd->pdev->dev);
+			return rc;
+		}
 	}
 
 	if (!is_mdss_iommu_attached()) {

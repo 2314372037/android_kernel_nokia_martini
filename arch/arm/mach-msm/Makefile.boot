@@ -46,7 +46,12 @@ endif
    zreladdr-$(CONFIG_ARCH_APQ8064)	:= 0x80208000
 
 # MSM8974
+ifeq ($(CONFIG_MACH_MSM8974_MARTINI),y)
+   # Keep UEFI runtime code and the active framebuffer below 16 MiB intact.
+   zreladdr-$(CONFIG_ARCH_MSM8974)	:= 0x01008000
+else
    zreladdr-$(CONFIG_ARCH_MSM8974)	:= 0x00008000
+endif
         dtb-$(CONFIG_ARCH_MSM8974)	+= msm8974-martini.dtb
 
 # APQ8084

@@ -1047,10 +1047,13 @@ int dsi_panel_device_register(struct platform_device *pdev,
 	}
 
 	ctrl_pdev = of_find_device_by_node(dsi_ctrl_np);
+	of_node_put(dsi_ctrl_np);
+	if (!ctrl_pdev)
+		return -EPROBE_DEFER;
 	ctrl_pdata = platform_get_drvdata(ctrl_pdev);
 	if (!ctrl_pdata) {
 		pr_err("%s: no dsi ctrl driver data\n", __func__);
-		return -EINVAL;
+		return -EPROBE_DEFER;
 	}
 
 	rc = mdss_dsi_regulator_init(ctrl_pdev);

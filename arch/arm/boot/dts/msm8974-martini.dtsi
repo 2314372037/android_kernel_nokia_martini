@@ -13,13 +13,19 @@
 // /include/ "msm8974-camera-sensor-mtp.dtsi"
 /include/ "msm8974-leds.dtsi"
 /include/ "dsi-panel-martini-amoled-dsi0-video.dtsi"
-// /include/ "msm8974-martini-regulator.dtsi"
+/include/ "msm8974-martini-regulator.dtsi"
 /include/ "msm8974-martini-panel.dtsi"
 /include/ "msm8974-martini-touch.dtsi"
 
 / {
+	aliases {
+		serial0 = &martini_uart;
+	};
+
 	chosen {
-		
+		/* lk2nd appends the boot image arguments to this string. */
+		bootargs = "earlyprintk console=ttyHSL0,115200,n8";
+		stdout-path = "serial0:115200n8";
 	};
 };
 
@@ -29,14 +35,36 @@
 	regulator-always-on;
 };
 
+&memory_hole {
+	/*
+	 * uefiplatWPBlue.cfg keeps MPPark runtime code at 0x00300000
+	 * and the active framebuffer at 0x00400000-0x00c00000.
+	 * Start Linux RAM at 16 MiB, matching Martini's zreladdr and
+	 * the alignment required by ARM_PATCH_PHYS_VIRT. Keep the
+	 * existing subsystem, SMEM and TZ exclusion above 0x07b00000.
+	 */
+	qcom,memblock-remove = <0x00000000 0x01000000
+			       0x07b00000 0x08400000>;
+};
+
 &soc {
-	serial@f991e000 {
+	qcom,wdt@f9017000 {
+		/* Leave scheduling margin while display warnings reach UART. */
+		qcom,pet-time = <1000>;
+	};
+
+	martini_uart: serial@f991e000 {
 		status = "ok";
 	};
 
 	qcom,mdss_mdp@fd900000 {
 		qcom,mdss_fb_primary {
-			qcom,memory-reservation-size = <0x00800000>;
+			/*
+			 * Two 1088-pixel-stride, 1920-line, 32-bit frames.
+			 * Recovery's fbdev backend needs double buffering to
+			 * submit pans and finish the continuous-splash handoff.
+			 */
+			qcom,memory-reservation-size = <0x01000000>;
 		};
 	};
 
@@ -90,6 +118,23 @@
 	// 	qcom,cdc-micbias2-headset-only;
 	// 	qcom,mbhc-audio-jack-type = "6-pole-jack";
 	// };
+};
+
+/* Keep the flash labels required by the base DTS, without enabling MTP LEDs. */
+&spmi_bus {
+	qcom,pm8941@1 {
+		qcom,leds@d000 {
+			status = "disabled";
+		};
+
+		qcom,leds@d300 {
+			status = "disabled";
+		};
+	};
+};
+
+&led_flash0 {
+	status = "disabled";
 };
 
 // &pm8941_lsid1 {
@@ -364,7 +409,7 @@
 	gpio@c700 { /* GPIO 8 */
 		qcom,mode = <0>;        /* QPNP_PIN_MODE_DIG_IN */
 		qcom,pull = <0>;        /* QPNP_PIN_PULL_UP_30  */
-		qcom,master-en = <1>;
+		qcom,master-en = <0>;
 	};
 
 	gpio@c800 { /* GPIO 9 */

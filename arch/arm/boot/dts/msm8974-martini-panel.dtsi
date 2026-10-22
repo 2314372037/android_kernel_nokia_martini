@@ -17,9 +17,6 @@
 };
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_martini_amoled_dsi0_video>;
-
-	qcom,platform-reset-gpio = <&pm8941_gpios 19 0>;
 	vdd-supply = <&pm8941_l22>;
-    vddio-supply = <&pm8941_l12>;
+	vddio-supply = <&pm8941_l12>;
 };

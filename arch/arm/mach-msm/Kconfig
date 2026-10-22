@@ -280,7 +280,7 @@ config ARCH_MSM8974
 	select MEMORY_HOLE_CARVEOUT
 	select MSM_RPM_STATS_LOG
 	select QMI_ENCDEC
-	select DONT_MAP_HOLE_AFTER_MEMBANK0
+	select DONT_MAP_HOLE_AFTER_MEMBANK0 if !MACH_MSM8974_MARTINI
 	select MSM_LPM_TEST
 	select MSM_RPM_LOG
 	select ARCH_WANT_KMAP_ATOMIC_FLUSH
@@ -673,6 +673,18 @@ config MSM_ADM3
 	bool
 
 menu "MSM Board Selection"
+
+config MACH_MSM8974_MARTINI
+	bool "Nokia Lumia 930 (Martini)"
+	depends on ARCH_MSM8974 && !MACH_MSM8974_HAMMERHEAD
+	select ARM_PATCH_PHYS_VIRT
+	help
+	  Use the generic MSM8974 board support for the Nokia Lumia 930.
+	  Decompress above UEFI's runtime code and framebuffer, and patch
+	  the RAM translation for the relocated kernel.
+	  Keep the linear RAM mapping across the low memory hole: lk2nd
+	  places the DTB above that hole, and its early virtual address must
+	  remain valid through memory reservation and paging initialization.
 
 config MACH_HALIBUT
 	depends on ARCH_MSM7X01A

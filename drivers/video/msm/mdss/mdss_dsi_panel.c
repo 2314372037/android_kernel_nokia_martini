@@ -165,6 +165,7 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 void mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	u32 i;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -188,7 +189,16 @@ void mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 	pr_debug("%s: enable = %d\n", __func__, enable);
 
 	if (enable) {
-		if (mdss_panel_id == PANEL_LGE_JDI_ORISE_VIDEO ||
+		if (pdata->panel_info.rst_seq_len) {
+			if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
+				gpio_set_value_cansleep(ctrl_pdata->disp_en_gpio, 1);
+			for (i = 0; i < pdata->panel_info.rst_seq_len; i += 2) {
+				gpio_set_value_cansleep(ctrl_pdata->rst_gpio,
+						pdata->panel_info.rst_seq[i]);
+				if (pdata->panel_info.rst_seq[i + 1])
+					msleep(pdata->panel_info.rst_seq[i + 1]);
+			}
+		} else if (mdss_panel_id == PANEL_LGE_JDI_ORISE_VIDEO ||
 			mdss_panel_id == PANEL_LGE_JDI_ORISE_CMD ||
 			mdss_panel_id == PANEL_LGE_JDI_NOVATEK_VIDEO ||
 			mdss_panel_id == PANEL_LGE_JDI_NOVATEK_CMD) {
@@ -308,7 +318,8 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 
 	mipi  = &pdata->panel_info.mipi;
 
-	if (!gpio_get_value(ctrl->disp_en_gpio))
+	if (gpio_is_valid(ctrl->disp_en_gpio) &&
+	    !gpio_get_value_cansleep(ctrl->disp_en_gpio))
 		return 0;
 
 	if (ctrl->off_cmds.cmd_cnt)
@@ -418,6 +429,21 @@ static int mdss_panel_parse_dt(struct platform_device *pdev,
 	const char *data;
 	static const char *bl_ctrl_type, *pdest;
 	bool fbc_enabled = false;
+	struct property *reset_seq;
+
+	panel_data->panel_info.rst_seq_len = 0;
+	reset_seq = of_find_property(np, "qcom,mdss-dsi-reset-sequence", &len);
+	if (reset_seq) {
+		if (!len || len % (2 * sizeof(u32)) ||
+		    len > sizeof(panel_data->panel_info.rst_seq))
+			return -EINVAL;
+		rc = of_property_read_u32_array(np,
+			"qcom,mdss-dsi-reset-sequence",
+			panel_data->panel_info.rst_seq, len / sizeof(u32));
+		if (rc)
+			return rc;
+		panel_data->panel_info.rst_seq_len = len / sizeof(u32);
+	}
 
 	rc = of_property_read_u32_array(np, "qcom,mdss-pan-res", res, 2);
 	if (rc) {
