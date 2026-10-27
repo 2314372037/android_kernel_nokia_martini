@@ -381,6 +381,7 @@ struct mdss_mdp_writeback_arg {
 struct mdss_overlay_private {
 	ktime_t vsync_time;
 	struct sysfs_dirent *vsync_event_sd;
+	bool vsync_pending;	/* protected by ctl->lock */
 	int borderfill_enable;
 	int overlay_play_enable;
 	int hw_refresh;

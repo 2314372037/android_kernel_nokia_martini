@@ -744,6 +744,24 @@ static void mdss_mdp_overlay_cleanup(struct msm_fb_data_type *mfd)
 		mdss_mdp_pipe_destroy(pipe);
 }
 
+/* Caller holds ctl->lock. */
+static int mdss_mdp_overlay_vsync_apply(struct mdss_mdp_ctl *ctl, int en)
+{
+	int rc;
+
+	if (!ctl->add_vsync_handler || !ctl->remove_vsync_handler)
+		return -EOPNOTSUPP;
+
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
+	if (en)
+		rc = ctl->add_vsync_handler(ctl, &ctl->vsync_handler);
+	else
+		rc = ctl->remove_vsync_handler(ctl, &ctl->vsync_handler);
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
+
+	return rc;
+}
+
 static int mdss_mdp_overlay_start(struct msm_fb_data_type *mfd)
 {
 	int rc;
@@ -778,6 +796,22 @@ static int mdss_mdp_overlay_start(struct msm_fb_data_type *mfd)
 
 	rc = mdss_mdp_ctl_start(mdp5_data->ctl);
 	if (rc == 0) {
+		int vsync_rc;
+
+		mutex_lock(&mdp5_data->ctl->lock);
+		if (mdp5_data->vsync_pending) {
+			vsync_rc = mdss_mdp_overlay_vsync_apply(mdp5_data->ctl, 1);
+			if (vsync_rc) {
+				pr_err("fb%d deferred vsync enable failed (%d)\n",
+					mfd->index, vsync_rc);
+			} else {
+				mdp5_data->vsync_pending = false;
+				pr_info("fb%d applied deferred vsync enable\n",
+					mfd->index);
+			}
+		}
+		mutex_unlock(&mdp5_data->ctl->lock);
+
 		atomic_inc(&ov_active_panels);
 
 		mdss_mdp_ctl_notifier_register(mdp5_data->ctl,
@@ -1429,28 +1463,41 @@ static void mdss_mdp_overlay_handle_vsync(struct mdss_mdp_ctl *ctl,
 int mdss_mdp_overlay_vsync_ctrl(struct msm_fb_data_type *mfd, int en)
 {
 	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
+	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
 	int rc;
 
 	if (!ctl)
 		return -ENODEV;
-	if (!ctl->add_vsync_handler || !ctl->remove_vsync_handler)
-		return -EOPNOTSUPP;
+
+	mutex_lock(&ctl->lock);
+	/* Video callbacks are installed when the controller first starts. */
+	if (!ctl->power_on && mfd->panel_info->type == MIPI_VIDEO_PANEL &&
+	    !ctl->add_vsync_handler && !ctl->remove_vsync_handler) {
+		mdp5_data->vsync_pending = !!en;
+		rc = 0;
+		goto done;
+	}
+
+	if (!ctl->add_vsync_handler || !ctl->remove_vsync_handler) {
+		rc = -EOPNOTSUPP;
+		goto done;
+	}
 
 	if (!ctl->power_on) {
 		pr_debug("fb%d vsync pending first update en=%d\n",
 				mfd->index, en);
-		return -EPERM;
+		rc = -EPERM;
+		goto done;
 	}
 
 	pr_debug("fb%d vsync en=%d\n", mfd->index, en);
 
-	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
-	if (en)
-		rc = ctl->add_vsync_handler(ctl, &ctl->vsync_handler);
-	else
-		rc = ctl->remove_vsync_handler(ctl, &ctl->vsync_handler);
-	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
+	rc = mdss_mdp_overlay_vsync_apply(ctl, en);
+	if (!rc)
+		mdp5_data->vsync_pending = false;
 
+done:
+	mutex_unlock(&ctl->lock);
 	return rc;
 }
 
