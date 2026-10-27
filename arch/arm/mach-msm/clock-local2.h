@@ -95,6 +95,7 @@ struct fixed_clk {
  * @max_div: maximum branch divider value (if zero, no divider exists)
  * @halt_check: halt checking type
  * @base: pointer to base address of ioremapped registers.
+ * @halt_warned: bitmap of on/off timeouts already reported for this clock
  */
 struct branch_clk {
 	void   (*set_rate)(struct branch_clk *, struct clk_freq_tbl *);
@@ -106,6 +107,7 @@ struct branch_clk {
 	const u32 max_div;
 	const u32 halt_check;
 	void *const __iomem *base;
+	unsigned long halt_warned;
 };
 
 static inline struct branch_clk *to_branch_clk(struct clk *clk)
@@ -121,6 +123,7 @@ static inline struct branch_clk *to_branch_clk(struct clk *clk)
  * @en_mask: enable mask
  * @halt_check: halt checking type
  * @base: pointer to base address of ioremapped registers.
+ * @halt_warned: bitmap of on/off timeouts already reported for this clock
  * An on/off switch with a rate derived from the parent.
  */
 struct local_vote_clk {
@@ -131,6 +134,7 @@ struct local_vote_clk {
 	const u32 en_mask;
 	const u32 halt_check;
 	void *const __iomem *base;
+	unsigned long halt_warned;
 };
 
 static inline struct local_vote_clk *to_local_vote_clk(struct clk *clk)

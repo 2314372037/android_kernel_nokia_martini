@@ -331,7 +331,8 @@ static enum handoff rcg_clk_handoff(struct clk *c)
  */
 static void branch_clk_halt_check(u32 halt_check, const char *clk_name,
 				  void __iomem *cbcr_reg,
-				  enum branch_state br_status)
+				  enum branch_state br_status,
+				  unsigned long *halt_warned)
 {
 	char *status_str = (br_status == BRANCH_ON) ? "off" : "on";
 
@@ -347,25 +348,32 @@ static void branch_clk_halt_check(u32 halt_check, const char *clk_name,
 		udelay(HALT_CHECK_DELAY_US);
 	} else if (halt_check == HALT) {
 		int count;
-		u32 val;
+		u32 val, status;
 		for (count = HALT_CHECK_MAX_LOOPS; count > 0; count--) {
 			val = readl_relaxed(cbcr_reg);
-			val &= BRANCH_CHECK_MASK;
+			status = val & BRANCH_CHECK_MASK;
 			switch (br_status) {
 			case BRANCH_ON:
-				if (val == BRANCH_ON_VAL
-					|| val == BRANCH_NOC_FSM_ON_VAL)
+				if (status == BRANCH_ON_VAL ||
+				    status == BRANCH_NOC_FSM_ON_VAL)
 					return;
 				break;
 
 			case BRANCH_OFF:
-				if (val == BRANCH_OFF_VAL)
+				if (status == BRANCH_OFF_VAL)
 					return;
 				break;
 			};
 			udelay(1);
 		}
-		WARN(count == 0, "%s status stuck %s", clk_name, status_str);
+		/*
+		 * This runs under the clock's IRQ-safe enable lock. Repeated
+		 * stacks on a slow console can stall GPU/display work, so retain
+		 * the first timeout in each direction for every clock only.
+		 */
+		WARN(count == 0 && !test_and_set_bit(br_status, halt_warned),
+			"%s status stuck %s (cbcr=0x%08x)\n",
+			clk_name, status_str, val);
 	}
 }
 
@@ -383,7 +391,8 @@ static int branch_clk_enable(struct clk *c)
 
 	/* Wait for clock to enable before continuing. */
 	branch_clk_halt_check(branch->halt_check, branch->c.dbg_name,
-				CBCR_REG(branch), BRANCH_ON);
+				CBCR_REG(branch), BRANCH_ON,
+				&branch->halt_warned);
 
 	return 0;
 }
@@ -402,7 +411,8 @@ static void branch_clk_disable(struct clk *c)
 
 	/* Wait for clock to disable before continuing. */
 	branch_clk_halt_check(branch->halt_check, branch->c.dbg_name,
-				CBCR_REG(branch), BRANCH_OFF);
+				CBCR_REG(branch), BRANCH_OFF,
+				&branch->halt_warned);
 }
 
 static int branch_cdiv_set_rate(struct branch_clk *branch, unsigned long rate)
@@ -609,7 +619,7 @@ static int local_vote_clk_enable(struct clk *c)
 	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
 
 	branch_clk_halt_check(vclk->halt_check, c->dbg_name, CBCR_REG(vclk),
-				BRANCH_ON);
+				BRANCH_ON, &vclk->halt_warned);
 
 	return 0;
 }
