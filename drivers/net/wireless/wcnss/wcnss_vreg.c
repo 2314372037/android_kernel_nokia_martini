@@ -119,11 +119,7 @@ struct host_driver {
 	struct list_head list;
 };
 
-enum {
-	WCNSS_XO_48MHZ = 1,
-	WCNSS_XO_19MHZ,
-	WCNSS_XO_INVALID,
-};
+
 
 enum {
 	IRIS_3660, /* also 3660A and 3680 */

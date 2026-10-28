@@ -17,6 +17,7 @@
 #include <linux/platform_device.h>
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
+#include <linux/sched.h>
 #include <linux/wcnss_wlan.h>
 #include <linux/platform_data/qcom_wcnss_device.h>
 #include <linux/workqueue.h>
@@ -989,6 +990,109 @@ u32 wcnss_get_wlan_rx_buff_count(void)
 
 }
 EXPORT_SYMBOL(wcnss_get_wlan_rx_buff_count);
+
+void wcnss_get_monotonic_boottime(struct timespec *ts)
+{
+	get_monotonic_boottime(ts);
+}
+EXPORT_SYMBOL(wcnss_get_monotonic_boottime);
+
+int wcnss_device_is_shutdown(void)
+{
+	return 0;
+}
+EXPORT_SYMBOL(wcnss_device_is_shutdown);
+
+bool wcnss_cbc_complete(void)
+{
+	return true;
+}
+EXPORT_SYMBOL(wcnss_cbc_complete);
+
+int wcnss_wlan_iris_xo_mode(void)
+{
+	if (penv && penv->pdev) {
+		if (penv->wlan_config.use_48mhz_xo)
+			return WCNSS_XO_48MHZ;
+		else
+			return WCNSS_XO_19MHZ;
+	}
+	return -ENODEV;
+}
+EXPORT_SYMBOL(wcnss_wlan_iris_xo_mode);
+
+void wcnss_reset_fiq(bool clk_chk_en)
+{
+	wcnss_reset_intr();
+}
+EXPORT_SYMBOL(wcnss_reset_fiq);
+
+int wcnss_is_hw_pronto_ver3(void)
+{
+	return 0;
+}
+EXPORT_SYMBOL(wcnss_is_hw_pronto_ver3);
+
+int wcnss_get_iris_name(char *iris_version)
+{
+	if (iris_version) {
+		strcpy(iris_version, "WCN3680");
+		return 0;
+	}
+	return -EINVAL;
+}
+EXPORT_SYMBOL(wcnss_get_iris_name);
+
+void wcnss_dump_stack(struct task_struct *task)
+{
+	show_stack(task, NULL);
+}
+EXPORT_SYMBOL(wcnss_dump_stack);
+
+void wcnss_flush_work(struct work_struct *work)
+{
+	if (work != NULL)
+		cancel_work_sync(work);
+}
+EXPORT_SYMBOL(wcnss_flush_work);
+
+void wcnss_flush_delayed_work(struct delayed_work *dwork)
+{
+	if (dwork != NULL)
+		cancel_delayed_work_sync(dwork);
+}
+EXPORT_SYMBOL(wcnss_flush_delayed_work);
+
+int wcnss_get_wlan_mac_address(char mac_addr[WLAN_MAC_ADDR_SIZE])
+{
+	return -ENODEV;
+}
+EXPORT_SYMBOL(wcnss_get_wlan_mac_address);
+
+static u16 wcnss_unsafe_ch_list[128];
+static u16 wcnss_unsafe_ch_count;
+
+int wcnss_set_wlan_unsafe_channel(u16 *unsafe_ch_list, u16 ch_count)
+{
+	if (unsafe_ch_list && ch_count <= 128) {
+		memcpy(wcnss_unsafe_ch_list, unsafe_ch_list, ch_count * sizeof(u16));
+		wcnss_unsafe_ch_count = ch_count;
+		return 0;
+	}
+	return -EINVAL;
+}
+EXPORT_SYMBOL(wcnss_set_wlan_unsafe_channel);
+
+int wcnss_get_wlan_unsafe_channel(u16 *unsafe_ch_list, u16 buffer_size, u16 *ch_count)
+{
+	if (buffer_size < wcnss_unsafe_ch_count * sizeof(u16))
+		return -ENODEV;
+	memcpy(unsafe_ch_list, wcnss_unsafe_ch_list, wcnss_unsafe_ch_count * sizeof(u16));
+	*ch_count = wcnss_unsafe_ch_count;
+	return 0;
+}
+EXPORT_SYMBOL(wcnss_get_wlan_unsafe_channel);
+
 
 
 static int wcnss_smd_tx(void *data, int len)
