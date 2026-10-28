@@ -7786,6 +7786,16 @@ void nl80211_send_unprot_disassoc(struct cfg80211_registered_device *rdev,
 				NL80211_CMD_UNPROT_DISASSOCIATE, gfp);
 }
 
+void cfg80211_ap_stopped(struct net_device *netdev, gfp_t gfp)
+{
+	struct wireless_dev *wdev = netdev->ieee80211_ptr;
+	struct cfg80211_registered_device *rdev = wiphy_to_dev(wdev->wiphy);
+
+	nl80211_send_mlme_event(rdev, netdev, NULL, 0,
+				NL80211_CMD_STOP_AP, gfp);
+}
+EXPORT_SYMBOL(cfg80211_ap_stopped);
+
 static void nl80211_send_mlme_timeout(struct cfg80211_registered_device *rdev,
 				      struct net_device *netdev, int cmd,
 				      const u8 *addr, gfp_t gfp)
