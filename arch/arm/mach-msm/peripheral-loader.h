@@ -35,7 +35,8 @@ struct pil_desc {
 	struct module *owner;
 	unsigned long proxy_timeout;
 	unsigned long flags;
-#define PIL_SKIP_ENTRY_CHECK	BIT(0)
+#define PIL_SKIP_ENTRY_CHECK		BIT(0)
+#define PIL_FORCE_NON_RELOCATABLE	BIT(1)
 	struct pil_priv *priv;
 	unsigned int proxy_unvote_irq;
 };

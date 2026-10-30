@@ -440,6 +440,7 @@ static int __devinit pil_lpass_driver_probe(struct platform_device *pdev)
 
 	desc = &q6->desc;
 	desc->owner = THIS_MODULE;
+	desc->flags |= PIL_FORCE_NON_RELOCATABLE;
 	desc->proxy_timeout = PROXY_TIMEOUT_MS;
 	desc->proxy_unvote_irq = gpio_clk_ready;
 

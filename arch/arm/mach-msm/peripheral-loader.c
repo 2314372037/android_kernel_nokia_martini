@@ -242,8 +242,11 @@ static irqreturn_t proxy_unvote_intr_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static bool segment_is_relocatable(const struct elf32_phdr *p)
+static bool segment_is_relocatable(const struct pil_desc *desc,
+				   const struct elf32_phdr *p)
 {
+	if (desc && (desc->flags & PIL_FORCE_NON_RELOCATABLE))
+		return false;
 	return !!(p->p_flags & BIT(27));
 }
 
@@ -255,7 +258,7 @@ static phys_addr_t pil_reloc(const struct pil_priv *priv, phys_addr_t addr)
 static struct pil_seg *pil_init_seg(const struct pil_desc *desc,
 				  const struct elf32_phdr *phdr, int num)
 {
-	bool reloc = segment_is_relocatable(phdr);
+	bool reloc = segment_is_relocatable(desc, phdr);
 	const struct pil_priv *priv = desc->priv;
 	struct pil_seg *seg;
 
@@ -405,7 +408,7 @@ static int pil_setup_region(struct pil_priv *priv, const struct pil_mdt *mdt)
 		start = phdr->p_paddr;
 		end = start + phdr->p_memsz;
 
-		if (segment_is_relocatable(phdr)) {
+		if (segment_is_relocatable(priv->desc, phdr)) {
 			min_addr_r = min(min_addr_r, start);
 			max_addr_r = max(max_addr_r, end);
 			/*

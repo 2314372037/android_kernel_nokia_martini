@@ -258,6 +258,7 @@ struct q6v5_data __devinit *pil_q6v5_init(struct platform_device *pdev)
 		return ERR_PTR(-ENOMEM);
 
 	desc = &drv->desc;
+	desc->flags |= PIL_FORCE_NON_RELOCATABLE;
 	ret = of_property_read_string(pdev->dev.of_node, "qcom,firmware-name",
 				      &desc->name);
 	if (ret)
