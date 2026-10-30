@@ -48,6 +48,64 @@
 };
 
 &soc {
+	/* Explicitly disable Modem Subsystem (MSS) and avoid any PIL boot triggers */
+	qcom,mss@fc880000 {
+		status = "disabled";
+	};
+
+	/* Explicitly disable Camera hardware blocks */
+	qcom,msm-cam@fd8C0000 {
+		status = "disabled";
+	};
+	qcom,csiphy@fda0ac00 {
+		status = "disabled";
+	};
+	qcom,csiphy@fda0b000 {
+		status = "disabled";
+	};
+	qcom,csiphy@fda0b400 {
+		status = "disabled";
+	};
+	qcom,csid@fda08000 {
+		status = "disabled";
+	};
+	qcom,csid@fda08400 {
+		status = "disabled";
+	};
+	qcom,csid@fda08800 {
+		status = "disabled";
+	};
+	qcom,csid@fda08c00 {
+		status = "disabled";
+	};
+	qcom,ispif@fda0a000 {
+		status = "disabled";
+	};
+	qcom,vfe@fda10000 {
+		status = "disabled";
+	};
+	qcom,vfe@fda14000 {
+		status = "disabled";
+	};
+	qcom,jpeg@fda04000 {
+		status = "disabled";
+	};
+	qcom,jpeg@fda05000 {
+		status = "disabled";
+	};
+	qcom,jpeg@fda06000 {
+		status = "disabled";
+	};
+	qcom,irqrouter@fda00000 {
+		status = "disabled";
+	};
+	qcom,cpp@fda09000 {
+		status = "disabled";
+	};
+	qcom,cci@fda0c000 {
+		status = "disabled";
+	};
+
 	qcom,wdt@f9017000 {
 		/* Leave scheduling margin while display warnings reach UART. */
 		qcom,pet-time = <1000>;
@@ -76,7 +134,7 @@
 			label = "camera_snapshot";
 			gpios = <&pm8941_gpios 3 0x1>;
 			linux,input-type = <1>;
-			linux,code = <0x2fe>;
+			linux,code = <212>;
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
@@ -113,16 +171,22 @@
 	// 	};
 	// };
 
-	// sound {
-	// 	qcom,model = "msm8974-taiko-mtp-snd-card";
-	// 	qcom,cdc-micbias2-headset-only;
-	// 	qcom,mbhc-audio-jack-type = "6-pole-jack";
-	// };
+	sound {
+		qcom,model = "msm8974-taiko-mtp-snd-card";
+		qcom,cdc-micbias2-headset-only;
+	};
 };
 
 /* Keep the flash labels required by the base DTS, without enabling MTP LEDs. */
 &spmi_bus {
 	qcom,pm8941@1 {
+		qcom,vibrator@c000 {
+			status = "okay";
+			qcom,vib-timeout-ms = <15000>;
+			qcom,vib-vtg-level-mV = <3100>;
+			qcom,vib-en-gpio = <&pm8941_gpios 8 0>;
+		};
+
 		qcom,leds@d000 {
 			status = "disabled";
 		};
@@ -136,13 +200,6 @@
 &led_flash0 {
 	status = "disabled";
 };
-
-// &pm8941_lsid1 {
-// 	qcom,leds@d800 {
-// 		status = "okay";
-// 		qcom,vib-timeout-ms = <12000>;
-// 	};
-// };
 
 
 // &pm8941_lsid1 {
@@ -325,7 +382,6 @@
 
 &pm8941_chg {
 	status = "ok";
-	qcom,charging-disabled;
 	//qcom,battery-data = <&mtp_batterydata>;
 
 	qcom,chgr@1000 {
@@ -406,10 +462,12 @@
 		qcom,master-en = <1>;
 	};
 
-	gpio@c700 { /* GPIO 8 */
-		qcom,mode = <0>;        /* QPNP_PIN_MODE_DIG_IN */
-		qcom,pull = <0>;        /* QPNP_PIN_PULL_UP_30  */
-		qcom,master-en = <0>;
+	gpio@c700 { /* GPIO 8 - VIBRA_AMP_EN */
+		qcom,mode = <1>;          /* QPNP_PIN_MODE_DIG_OUT */
+		qcom,out-strength = <1>;  /* QPNP_PIN_OUT_STRENGTH_LOW */
+		qcom,src-sel = <0>;       /* QPNP_PIN_SEL_FUNC_CONSTANT */
+		qcom,vin-sel = <2>;       /* QPNP_PIN_VIN2 (1.8V) */
+		qcom,master-en = <1>;
 	};
 
 	gpio@c800 { /* GPIO 9 */

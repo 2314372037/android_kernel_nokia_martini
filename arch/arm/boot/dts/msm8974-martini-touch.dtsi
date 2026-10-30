@@ -26,5 +26,6 @@
 		vdd-supply = <&pm8941_l22>;
 		vcc_i2c-supply = <&pm8941_l22>;
 		synaptics,display-coords = <0 0 1079 1919>;
+		synaptics,button-map = <158 102 217>;
 	};
 };
