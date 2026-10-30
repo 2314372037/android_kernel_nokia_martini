@@ -18,6 +18,8 @@
 #include <linux/hrtimer.h>
 #include <linux/of_device.h>
 #include <linux/spmi.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 
 #include <linux/qpnp/vibrator.h>
 #include "../../staging/android/timed_output.h"
@@ -48,6 +50,7 @@ struct qpnp_vib {
 	int vtg_level;
 	int timeout;
 	struct mutex lock;
+	int en_gpio;
 };
 
 static struct qpnp_vib *vib_dev;
@@ -129,6 +132,9 @@ static int qpnp_vib_set(struct qpnp_vib *vib, int on)
 {
 	int rc;
 	u8 val;
+
+	if (gpio_is_valid(vib->en_gpio))
+		gpio_set_value(vib->en_gpio, !!on);
 
 	if (on) {
 		val = vib->reg_vtg_ctl;
@@ -237,6 +243,20 @@ static int __devinit qpnp_vibrator_probe(struct spmi_device *spmi)
 		return -ENOMEM;
 
 	vib->spmi = spmi;
+	vib->en_gpio = -1;
+
+	vib->en_gpio = of_get_named_gpio(spmi->dev.of_node,
+			"qcom,vib-en-gpio", 0);
+	if (gpio_is_valid(vib->en_gpio)) {
+		rc = gpio_request_one(vib->en_gpio, GPIOF_OUT_INIT_LOW,
+				"vib_en_gpio");
+		if (rc < 0) {
+			if (rc != -EPROBE_DEFER)
+				dev_err(&spmi->dev,
+					"Unable to request vib en gpio: %d\n", rc);
+			return rc;
+		}
+	}
 
 	vib->timeout = QPNP_VIB_DEFAULT_TIMEOUT;
 	rc = of_property_read_u32(spmi->dev.of_node,
@@ -291,8 +311,11 @@ static int __devinit qpnp_vibrator_probe(struct spmi_device *spmi)
 	dev_set_drvdata(&spmi->dev, vib);
 
 	rc = timed_output_dev_register(&vib->timed_dev);
-	if (rc < 0)
+	if (rc < 0) {
+		if (gpio_is_valid(vib->en_gpio))
+			gpio_free(vib->en_gpio);
 		return rc;
+	}
 
 	vib_dev = vib;
 
@@ -307,6 +330,8 @@ static int  __devexit qpnp_vibrator_remove(struct spmi_device *spmi)
 	hrtimer_cancel(&vib->vib_timer);
 	timed_output_dev_unregister(&vib->timed_dev);
 	mutex_destroy(&vib->lock);
+	if (gpio_is_valid(vib->en_gpio))
+		gpio_free(vib->en_gpio);
 
 	return 0;
 }

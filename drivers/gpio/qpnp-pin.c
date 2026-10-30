@@ -776,6 +776,15 @@ static int qpnp_pin_direction_output(struct gpio_chip *gpio_chip,
 		return rc;
 
 	rc = qpnp_pin_set_mode(q_chip, q_spec, QPNP_PIN_MODE_DIG_OUT);
+	if (rc)
+		return rc;
+
+	/* Ensure master_en is set so the pin buffer is physically active */
+	q_reg_clr_set(&q_spec->regs[Q_REG_I_EN_CTL],
+		  Q_REG_MASTER_EN_SHIFT, Q_REG_MASTER_EN_MASK, 1);
+	rc = spmi_ext_register_writel(q_chip->spmi->ctrl, q_spec->slave,
+			      Q_REG_ADDR(q_spec, Q_REG_EN_CTL),
+			      &q_spec->regs[Q_REG_I_EN_CTL], 1);
 
 	return rc;
 }
