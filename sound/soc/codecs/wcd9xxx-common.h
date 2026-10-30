@@ -35,7 +35,7 @@
 #define	WCD9XXX_CLSH_STATE_HPHL (0x01 << 1)
 #define	WCD9XXX_CLSH_STATE_HPHR (0x01 << 2)
 #define	WCD9XXX_CLSH_STATE_LO (0x01 << 3)
-#define NUM_CLSH_STATES ((0x01 << 4) - 1)
+#define NUM_CLSH_STATES (0x01 << 5)
 
 /* Derived State: Bits 1 and 2 should be set for Headphone stereo */
 #define WCD9XXX_CLSH_STATE_HPH_ST (WCD9XXX_CLSH_STATE_HPHL | \

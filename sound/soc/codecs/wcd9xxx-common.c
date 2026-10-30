@@ -501,14 +501,35 @@ static void wcd9xxx_clsh_state_lo(struct snd_soc_codec *codec,
 	}
 }
 
-static void wcd9xxx_clsh_state_err(struct snd_soc_codec *codec,
+static void wcd9xxx_clsh_state_combined(struct snd_soc_codec *codec,
 		struct wcd9xxx_clsh_cdc_data *clsh_d,
 		u8 req_state, bool is_enable)
 {
-	dev_dbg(codec->dev, "%s Wrong request for class H state machine requested to %s %s"
-			, __func__, is_enable ? "enable" : "disable",
-			state_to_str(req_state));
-	WARN_ON(1);
+	dev_dbg(codec->dev, "%s: req_state %s is_enable %d, current state 0x%x\n",
+		__func__, state_to_str(req_state), is_enable, clsh_d->state);
+	if (is_enable) {
+		if (req_state == WCD9XXX_CLSH_STATE_EAR)
+			wcd9xxx_clsh_state_ear(codec, clsh_d, req_state, is_enable);
+		else if (req_state == WCD9XXX_CLSH_STATE_HPHL)
+			wcd9xxx_clsh_state_hph_l(codec, clsh_d, req_state, is_enable);
+		else if (req_state == WCD9XXX_CLSH_STATE_HPHR)
+			wcd9xxx_clsh_state_hph_r(codec, clsh_d, req_state, is_enable);
+		else if (req_state == WCD9XXX_CLSH_STATE_LO)
+			wcd9xxx_clsh_state_lo(codec, clsh_d, req_state, is_enable);
+	} else {
+		if (req_state == WCD9XXX_CLSH_STATE_EAR)
+			wcd9xxx_clsh_turnoff_postpa(codec);
+		else if (req_state == WCD9XXX_CLSH_STATE_HPHL)
+			wcd9xxx_clsh_comp_req(codec, clsh_d, CLSH_COMPUTE_HPH_L, false);
+		else if (req_state == WCD9XXX_CLSH_STATE_HPHR)
+			wcd9xxx_clsh_comp_req(codec, clsh_d, CLSH_COMPUTE_HPH_R, false);
+		else if (req_state == WCD9XXX_CLSH_STATE_LO) {
+			if (!(clsh_d->state & (WCD9XXX_CLSH_STATE_EAR | WCD9XXX_CLSH_STATE_HPH_ST))) {
+				wcd9xxx_enable_ncp(codec, false);
+				wcd9xxx_enable_buck(codec, false);
+			}
+		}
+	}
 }
 
 void wcd9xxx_clsh_fsm(struct snd_soc_codec *codec,
@@ -522,17 +543,26 @@ void wcd9xxx_clsh_fsm(struct snd_soc_codec *codec,
 	case WCD9XXX_CLSH_EVENT_PRE_DAC:
 
 		/* PRE_DAC event should be used only for Enable */
-		BUG_ON(req_type != WCD9XXX_CLSH_REQ_ENABLE);
+		if (req_type != WCD9XXX_CLSH_REQ_ENABLE) {
+			pr_warn("%s: PRE_DAC event with non-enable req_type %d\n",
+				__func__, req_type);
+			break;
+		}
 
 		old_state = cdc_clsh_d->state;
 		new_state = old_state | req_state;
 
-		(*clsh_state_fp[new_state]) (codec, cdc_clsh_d,
+		if (new_state < NUM_CLSH_STATES && clsh_state_fp[new_state]) {
+			(*clsh_state_fp[new_state]) (codec, cdc_clsh_d,
 							req_state, req_type);
-		cdc_clsh_d->state = new_state;
-		dev_dbg(codec->dev, "%s: ClassH state transition from %s to %s\n",
-			__func__, state_to_str(old_state),
-			state_to_str(cdc_clsh_d->state));
+			cdc_clsh_d->state = new_state;
+			dev_dbg(codec->dev, "%s: ClassH state transition from %s to %s\n",
+				__func__, state_to_str(old_state),
+				state_to_str(cdc_clsh_d->state));
+		} else {
+			pr_warn("%s: invalid or null ClassH new_state = 0x%x\n",
+				__func__, new_state);
+		}
 
 		break;
 
@@ -546,7 +576,7 @@ void wcd9xxx_clsh_fsm(struct snd_soc_codec *codec,
 			old_state = cdc_clsh_d->state;
 			new_state = old_state & (~req_state);
 
-			if (new_state < NUM_CLSH_STATES) {
+			if (new_state < NUM_CLSH_STATES && clsh_state_fp[new_state]) {
 				(*clsh_state_fp[new_state]) (codec, cdc_clsh_d,
 							req_state, req_type);
 				cdc_clsh_d->state = new_state;
@@ -578,7 +608,7 @@ void wcd9xxx_clsh_init(struct wcd9xxx_clsh_cdc_data *clsh,
 	clsh->resmgr = resmgr;
 
 	for (i = 0; i < NUM_CLSH_STATES; i++)
-		clsh_state_fp[i] = wcd9xxx_clsh_state_err;
+		clsh_state_fp[i] = wcd9xxx_clsh_state_combined;
 
 	clsh_state_fp[WCD9XXX_CLSH_STATE_IDLE] = wcd9xxx_clsh_state_idle;
 	clsh_state_fp[WCD9XXX_CLSH_STATE_EAR] = wcd9xxx_clsh_state_ear;
