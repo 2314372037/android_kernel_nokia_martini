@@ -461,3 +461,11 @@ config SND_SOC_MSM_HDMI_CODEC_RX
 	help
 	HDMI audio drivers should be built only if the platform
         supports hdmi panel.
+
+config SND_SOC_TAS2552
+	tristate "TI TAS2552 amplifier (Martini 48 kHz playback)"
+	depends on I2C
+	select REGMAP_I2C
+	help
+	  Support the TAS2552 loudspeaker amplifier on Nokia Martini using
+	  stereo 16-bit I2S at 48 kHz, with its PLL clocked from BCLK.

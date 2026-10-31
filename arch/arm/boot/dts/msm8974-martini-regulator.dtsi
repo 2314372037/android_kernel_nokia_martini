@@ -18,8 +18,9 @@
  * Leave S2 at the base DTS setting of 2150000 uV.
  */
 &pm8941_s3 {
-	regulator-max-microvolt = <2000000>;
-	qcom,init-voltage = <2000000>;
+	/* S3A feeds N2182 AVDD (1.65-1.95 V) as well as digital I/O. */
+	regulator-max-microvolt = <1800000>;
+	qcom,init-voltage = <1800000>;
 };
 
 &pm8941_l11 {

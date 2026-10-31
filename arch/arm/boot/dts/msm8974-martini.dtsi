@@ -548,10 +548,12 @@
 		qcom,master-en = <1>;
 	};
 
-	gpio@d300 { /* GPIO 20 */
+	gpio@d300 { /* GPIO 20 - IHF_EN */
 		qcom,mode = <1>;          /* QPNP_PIN_MODE_DIG_OUT */
 		qcom,out-strength = <1>;  /* QPNP_PIN_OUT_STRENGTH_LOW */
-		qcom,src-sel = <2>;       /* QPNP_PIN_SEL_FUNC_1  */
+		qcom,src-sel = <0>;       /* QPNP_PIN_SEL_FUNC_CONSTANT */
+		qcom,invert = <0>;        /* Driver raises IHF_EN after supplies settle */
+		qcom,vin-sel = <2>;       /* QPNP_PIN_VIN2 (1.8V) */
 		qcom,master-en = <1>;
 	};
 
@@ -714,6 +716,17 @@
 				100 500 20 200 1000 20 1000 1000 70 200
 				50>;
 		qcom,channel-type = <0x1540>;
+	};
+};
+
+&i2c_5 {
+	status = "ok";
+	/* N2182: ADDR/D4 is grounded, IOVDD and AVDD use S3A. */
+	tas2552: amplifier@40 {
+		compatible = "ti,tas2552";
+		reg = <0x40>;
+		enable-gpios = <&pm8941_gpios 20 0>;
+		vdd-supply = <&pm8941_s3>;
 	};
 };
 

@@ -894,6 +894,23 @@
 		qcom,master-id = <86>;
 	};
 
+	i2c_5: i2c@f9927000 {
+		cell-index = <5>;
+		compatible = "qcom,i2c-qup";
+		reg = <0xf9927000 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg-names = "qup_phys_addr";
+		interrupts = <0 99 0>;
+		interrupt-names = "qup_err_intr";
+		qcom,i2c-bus-freq = <100000>;
+		qcom,i2c-src-freq = <50000000>;
+		qcom,scl-gpio = <&msmgpio 26 0>;
+		qcom,sda-gpio = <&msmgpio 25 0>;
+		qcom,master-id = <86>;
+		status = "disabled";
+	};
+
 	spi_0: spi@f9923000 {
 		compatible = "qcom,spi-qup-v2";
 		reg = <0xf9923000 0x1000>;
@@ -1204,6 +1221,13 @@
 
 	qcom,msm-dai-mi2s {
 		compatible = "qcom,msm-dai-mi2s";
+		qcom,msm-dai-q6-mi2s-sec {
+			compatible = "qcom,msm-dai-q6-mi2s";
+			qcom,msm-dai-q6-mi2s-dev-id = <1>;
+			/* N2182 DIN uses GPIO82/SD1; SD0 is its feedback output. */
+			qcom,msm-mi2s-rx-lines = <2>;
+			qcom,msm-mi2s-tx-lines = <0>;
+		};
 		qcom,msm-dai-q6-mi2s-quat {
 			compatible = "qcom,msm-dai-q6-mi2s";
 			qcom,msm-dai-q6-mi2s-dev-id = <3>;

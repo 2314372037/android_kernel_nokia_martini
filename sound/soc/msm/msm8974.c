@@ -35,6 +35,7 @@
 #include "../codecs/wcd9320.h"
 #include <linux/io.h>
 #include <linux/of.h>
+#include <linux/mutex.h>
 
 #define DRV_NAME "msm8974-asoc-taiko"
 
@@ -223,6 +224,8 @@ static struct clk *codec_clk;
 static int clk_users;
 static atomic_t prim_auxpcm_rsc_ref;
 static atomic_t sec_auxpcm_rsc_ref;
+static DEFINE_MUTEX(sec_audio_lock);
+static bool sec_mi2s_active;
 
 
 static int msm8974_liquid_ext_spk_power_amp_init(void)
@@ -1189,6 +1192,12 @@ static int msm_sec_auxpcm_startup(struct snd_pcm_substream *substream)
 	struct msm_auxpcm_ctrl *auxpcm_ctrl = NULL;
 	int ret = 0;
 
+	mutex_lock(&sec_audio_lock);
+	if (sec_mi2s_active) {
+		ret = -EBUSY;
+		goto err;
+	}
+
 	pr_debug("%s(): substream = %s, sec_auxpcm_rsc_ref counter = %d\n",
 		__func__, substream->name, atomic_read(&sec_auxpcm_rsc_ref));
 
@@ -1209,10 +1218,11 @@ static int msm_sec_auxpcm_startup(struct snd_pcm_substream *substream)
 		ret = msm_aux_pcm_get_gpios(auxpcm_ctrl);
 	}
 	if (ret < 0) {
+		atomic_dec(&sec_auxpcm_rsc_ref);
 		pr_err("%s: Aux PCM GPIO request failed\n", __func__);
-		return -EINVAL;
 	}
 err:
+	mutex_unlock(&sec_audio_lock);
 	return ret;
 }
 
@@ -1228,13 +1238,118 @@ static void msm_sec_auxpcm_shutdown(struct snd_pcm_substream *substream)
 
 	auxpcm_ctrl = pdata->sec_auxpcm_ctrl;
 
+	mutex_lock(&sec_audio_lock);
 	if (atomic_dec_return(&sec_auxpcm_rsc_ref) == 0)
 		msm_aux_pcm_free_gpios(auxpcm_ctrl);
+	mutex_unlock(&sec_audio_lock);
 }
 
 static struct snd_soc_ops msm_sec_auxpcm_be_ops = {
 	.startup = msm_sec_auxpcm_startup,
 	.shutdown = msm_sec_auxpcm_shutdown,
+};
+
+static int msm_sec_mi2s_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
+					      struct snd_pcm_hw_params *params)
+{
+	struct snd_interval *rate = hw_param_interval(params,
+					SNDRV_PCM_HW_PARAM_RATE);
+	struct snd_interval *channels = hw_param_interval(params,
+					SNDRV_PCM_HW_PARAM_CHANNELS);
+
+	rate->min = rate->max = 48000;
+	channels->min = channels->max = 2;
+	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
+		       SNDRV_PCM_FORMAT_S16_LE);
+	return 0;
+}
+
+/* Same pads as Secondary AUXPCM, selected as I2S in LPASS. */
+static const unsigned int msm_sec_mi2s_gpios[] = { 79, 80, 81, 82 };
+
+static int msm_sec_mi2s_clock(bool enable)
+{
+	struct afe_clk_cfg cfg = {
+		.i2s_cfg_minor_version = AFE_API_VERSION_I2S_CONFIG,
+		.clk_val1 = enable ? Q6AFE_LPASS_IBIT_CLK_1_P536_MHZ :
+				    Q6AFE_LPASS_IBIT_CLK_DISABLE,
+		.clk_src = Q6AFE_LPASS_CLK_SRC_INTERNAL,
+		.clk_root = Q6AFE_LPASS_CLK_ROOT_DEFAULT,
+		.clk_set_mode = Q6AFE_LPASS_MODE_CLK1_VALID,
+	};
+	int ret;
+
+	ret = afe_set_lpass_clock(AFE_PORT_ID_SECONDARY_MI2S_RX, &cfg);
+	if (ret < 0)
+		pr_err("%s: %s BCLK failed: %d\n", __func__,
+		       enable ? "enable" : "disable", ret);
+	return ret;
+}
+
+static int msm_sec_mi2s_startup(struct snd_pcm_substream *substream)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	unsigned int fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF |
+			   SND_SOC_DAIFMT_CBS_CFS;
+	int ret, i;
+
+	mutex_lock(&sec_audio_lock);
+	if (atomic_read(&sec_auxpcm_rsc_ref) || sec_mi2s_active) {
+		ret = -EBUSY;
+		goto unlock;
+	}
+	if (!lpaif_sec_muxsel_virt_addr) {
+		ret = -ENODEV;
+		goto unlock;
+	}
+	for (i = 0; i < ARRAY_SIZE(msm_sec_mi2s_gpios); i++) {
+		ret = gpio_request(msm_sec_mi2s_gpios[i], "secondary MI2S");
+		if (ret)
+			goto free_gpios;
+	}
+	iowrite32(0, lpaif_sec_muxsel_virt_addr);
+	ret = snd_soc_dai_set_fmt(rtd->cpu_dai, fmt);
+	if (ret < 0)
+		goto free_gpios;
+	ret = snd_soc_dai_set_fmt(rtd->codec_dai, fmt);
+	if (ret < 0)
+		goto free_gpios;
+	ret = msm_sec_mi2s_clock(true);
+	if (ret < 0) {
+		/* A timed-out command may already have enabled the DSP clock. */
+		msm_sec_mi2s_clock(false);
+		goto free_gpios;
+	}
+	sec_mi2s_active = true;
+	pr_info("%s: SD1, 48 kHz stereo S16_LE, BCLK 1536000 Hz\n", __func__);
+	mutex_unlock(&sec_audio_lock);
+	return 0;
+
+free_gpios:
+	while (i-- > 0)
+		gpio_free(msm_sec_mi2s_gpios[i]);
+unlock:
+	mutex_unlock(&sec_audio_lock);
+	return ret;
+}
+
+static void msm_sec_mi2s_shutdown(struct snd_pcm_substream *substream)
+{
+	int i;
+
+	mutex_lock(&sec_audio_lock);
+	if (sec_mi2s_active) {
+		msm_sec_mi2s_clock(false);
+		for (i = 0; i < ARRAY_SIZE(msm_sec_mi2s_gpios); i++)
+			gpio_free(msm_sec_mi2s_gpios[i]);
+		sec_mi2s_active = false;
+	}
+	mutex_unlock(&sec_audio_lock);
+}
+
+static struct snd_soc_ops msm_sec_mi2s_be_ops = {
+	.startup = msm_sec_mi2s_startup,
+	.shutdown = msm_sec_mi2s_shutdown,
 };
 
 static int msm_slim_0_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
@@ -2293,6 +2408,21 @@ static struct snd_soc_dai_link msm8974_common_dai_links[] = {
 		.be_id = MSM_BACKEND_DAI_SEC_AUXPCM_TX,
 		.be_hw_params_fixup = msm_auxpcm_be_params_fixup,
 		.ops = &msm_sec_auxpcm_be_ops,
+		.ignore_suspend = 1,
+	},
+	/* Secondary MI2S Backend DAI Link (Martini N2182 TAS2552) */
+	{
+		.name = LPASS_BE_SEC_MI2S_RX,
+		.stream_name = "Secondary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.1",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "tas2552.5-0040",
+		.codec_dai_name = "tas2552-amplifier",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_SECONDARY_MI2S_RX,
+		.be_hw_params_fixup = msm_sec_mi2s_rx_be_hw_params_fixup,
+		.ops = &msm_sec_mi2s_be_ops,
+		.ignore_pmdown_time = 1,
 		.ignore_suspend = 1,
 	},
 

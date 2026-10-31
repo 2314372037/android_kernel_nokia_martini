@@ -215,6 +215,18 @@ static struct gpiomux_setting gpio_i2c_config = {
 	.pull = GPIOMUX_PULL_NONE,
 };
 
+static struct gpiomux_setting gpio_blsp1_i2c5_sda = {
+	.func = GPIOMUX_FUNC_4,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+};
+
+static struct gpiomux_setting gpio_blsp1_i2c5_scl = {
+	.func = GPIOMUX_FUNC_5,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+};
+
 static struct gpiomux_setting lcd_en_act_cfg = {
 	.func = GPIOMUX_FUNC_GPIO,
 	.drv = GPIOMUX_DRV_8MA,
@@ -565,6 +577,20 @@ static struct msm_gpiomux_config msm_blsp_configs[] __initdata = {
 		},
 	},
 	{
+		.gpio      = 25,	/* BLSP1 QUP5 I2C_DAT (AUDIO_I2C_SDA) */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &gpio_blsp1_i2c5_sda,
+			[GPIOMUX_SUSPENDED] = &gpio_blsp1_i2c5_sda,
+		},
+	},
+	{
+		.gpio      = 26,	/* BLSP1 QUP5 I2C_CLK (AUDIO_I2C_SCL) */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &gpio_blsp1_i2c5_scl,
+			[GPIOMUX_SUSPENDED] = &gpio_blsp1_i2c5_scl,
+		},
+	},
+	{
 		.gpio      = 83,		/* BLSP11 QUP I2C_DAT */
 		.settings = {
 			[GPIOMUX_SUSPENDED] = &gpio_i2c_config,
@@ -764,20 +790,7 @@ static struct msm_gpiomux_config msm_sensor_configs[] __initdata = {
 			[GPIOMUX_SUSPENDED] = &gpio_suspend_config[1],
 		},
 	},
-	{
-		.gpio = 25, /* WEBCAM2_RESET_N */
-		.settings = {
-			[GPIOMUX_ACTIVE]    = &cam_settings[3],
-			[GPIOMUX_SUSPENDED] = &gpio_suspend_config[1],
-		},
-	},
-	{
-		.gpio = 26, /* CAM_IRQ */
-		.settings = {
-			[GPIOMUX_ACTIVE]    = &cam_settings[0],
-			[GPIOMUX_SUSPENDED] = &cam_settings[1],
-		},
-	},
+	/* GPIO 25 and 26 moved to msm_blsp_configs for BLSP1 QUP5 AUDIO_I2C */
 	{
 		.gpio = 27, /* OIS_SYNC */
 		.settings = {
