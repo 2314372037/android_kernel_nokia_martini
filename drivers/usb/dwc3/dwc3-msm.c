@@ -2117,6 +2117,8 @@ static char *dwc3_msm_pm_power_supplied_to[] = {
 #ifdef CONFIG_TOUCHSCREEN_CHARGER_NOTIFY
 	"touch",
 #endif
+	/* Martini's QPNP charger consumes USB current-limit notifications. */
+	"battery",
 };
 
 static enum power_supply_property dwc3_msm_pm_power_props_usb[] = {
@@ -2631,6 +2633,8 @@ static int __devinit dwc3_msm_probe(struct platform_device *pdev)
 		msm->usb_psy.supplied_to = dwc3_msm_pm_power_supplied_to;
 		msm->usb_psy.num_supplicants = ARRAY_SIZE(
 						dwc3_msm_pm_power_supplied_to);
+		if (!of_machine_is_compatible("nokia,martini"))
+			msm->usb_psy.num_supplicants--;
 		msm->usb_psy.properties = dwc3_msm_pm_power_props_usb;
 		msm->usb_psy.num_properties =
 					ARRAY_SIZE(dwc3_msm_pm_power_props_usb);

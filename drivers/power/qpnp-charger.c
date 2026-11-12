@@ -73,6 +73,9 @@
 #define CHGR_CHG_WDOG_DLY			0x63
 #define CHGR_CHG_WDOG_PET			0x64
 #define CHGR_CHG_WDOG_EN			0x65
+#define CHGR_WDOG_PET_BIT			BIT(7)
+#define CHGR_WDOG_DEFAULT_TIME_SEC		0x3C
+#define CHGR_WDOG_PET_PERIOD_MS			15000
 #define CHGR_IR_DROP_COMPEN			0x67
 #define CHGR_I_MAX_REG			0x44
 #define CHGR_USB_USB_SUSP			0x47
@@ -272,6 +275,7 @@ struct qpnp_chg_chip {
 	struct qpnp_chg_irq		chg_trklchg;
 	struct qpnp_chg_irq		chg_failed;
 	struct qpnp_chg_irq		chg_vbatdet_lo;
+	struct qpnp_chg_irq		chg_wdog;
 	struct qpnp_chg_irq		batt_pres;
 	bool				bat_is_cool;
 	bool				bat_is_warm;
@@ -320,6 +324,7 @@ struct qpnp_chg_chip {
 	struct work_struct		adc_measure_work;
 	struct delayed_work		arb_stop_work;
 	struct delayed_work		eoc_work;
+	struct delayed_work		wdog_work;
 	struct wake_lock		eoc_wake_lock;
 	struct qpnp_chg_regulator	otg_vreg;
 	struct qpnp_chg_regulator	boost_vreg;
@@ -664,11 +669,28 @@ qpnp_chg_usb_suspend_enable(struct qpnp_chg_chip *chip, int enable)
 			enable ? USB_SUSPEND_BIT : 0, 1);
 }
 
+static void
+qpnp_chg_pet_wdog(struct qpnp_chg_chip *chip)
+{
+	if (!chip->chgr_base || !of_machine_is_compatible("nokia,martini"))
+		return;
+
+	qpnp_chg_masked_write(chip, chip->chgr_base + CHGR_CHG_WDOG_PET,
+			CHGR_WDOG_PET_BIT, CHGR_WDOG_PET_BIT, 1);
+	if (!chip->charging_disabled && !chip->chg_done)
+		queue_delayed_work(system_power_efficient_wq,
+			&chip->wdog_work,
+			msecs_to_jiffies(CHGR_WDOG_PET_PERIOD_MS));
+}
+
 static int
 qpnp_chg_charge_en(struct qpnp_chg_chip *chip, int enable)
 {
 	if (!chip->chgr_base)
 		return 0;
+
+	if (enable)
+		qpnp_chg_pet_wdog(chip);
 
 	return qpnp_chg_masked_write(chip, chip->chgr_base + CHGR_CHG_CTRL,
 			CHGR_CHG_EN,
@@ -786,6 +808,23 @@ qpnp_chg_set_appropriate_vbatdet(struct qpnp_chg_chip *chip)
 }
 
 static void
+qpnp_chg_wdog_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct qpnp_chg_chip *chip = container_of(dwork,
+				struct qpnp_chg_chip, wdog_work);
+
+	if (!qpnp_chg_is_usb_chg_plugged_in(chip) &&
+			!qpnp_chg_is_dc_chg_plugged_in(chip))
+		return;
+
+	if (chip->charging_disabled || chip->chg_done)
+		return;
+
+	qpnp_chg_pet_wdog(chip);
+}
+
+static void
 qpnp_arb_stop_work(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
@@ -883,6 +922,7 @@ qpnp_chg_usb_usbin_valid_irq_handler(int irq, void *_chip)
 			qpnp_chg_usb_suspend_enable(chip, 1);
 			chip->chg_done = false;
 		} else {
+			qpnp_chg_pet_wdog(chip);
 			queue_delayed_work(system_power_efficient_wq,
 				&chip->eoc_work,
 				msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
@@ -931,12 +971,14 @@ qpnp_chg_dc_dcin_valid_irq_handler(int irq, void *_chip)
 
 	if (chip->dc_present ^ dc_present) {
 		chip->dc_present = dc_present;
-		if (!dc_present)
+		if (!dc_present) {
 			chip->chg_done = false;
-		else
+		} else {
+			qpnp_chg_pet_wdog(chip);
 			queue_delayed_work(system_power_efficient_wq,
 				&chip->eoc_work,
 				msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
+		}
 		power_supply_changed(&chip->dc_psy);
 		power_supply_changed(&chip->batt_psy);
 	}
@@ -969,6 +1011,15 @@ qpnp_chg_chgr_chg_failed_irq_handler(int irq, void *_chip)
 }
 
 static irqreturn_t
+qpnp_chg_chgr_chgwdog_irq_handler(int irq, void *_chip)
+{
+	struct qpnp_chg_chip *chip = _chip;
+
+	qpnp_chg_pet_wdog(chip);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t
 qpnp_chg_chgr_chg_trklchg_irq_handler(int irq, void *_chip)
 {
 	struct qpnp_chg_chip *chip = _chip;
@@ -976,6 +1027,7 @@ qpnp_chg_chgr_chg_trklchg_irq_handler(int irq, void *_chip)
 	pr_debug("TRKL IRQ triggered\n");
 
 	chip->chg_done = false;
+	qpnp_chg_pet_wdog(chip);
 	if (chip->bat_if_base)
 		power_supply_changed(&chip->batt_psy);
 
@@ -989,6 +1041,7 @@ qpnp_chg_chgr_chg_fastchg_irq_handler(int irq, void *_chip)
 
 	pr_debug("FAST_CHG IRQ triggered\n");
 	chip->chg_done = false;
+	qpnp_chg_pet_wdog(chip);
 	if (chip->bat_if_base)
 		power_supply_changed(&chip->batt_psy);
 	power_supply_changed(chip->usb_psy);
@@ -1425,6 +1478,7 @@ qpnp_batt_external_power_changed(struct power_supply *psy)
 		} else {
 			qpnp_chg_usb_suspend_enable(chip, 0);
 			qpnp_chg_iusbmax_set(chip, ret.intval / 1000);
+			qpnp_chg_pet_wdog(chip);
 		}
 	}
 
@@ -1544,6 +1598,18 @@ qpnp_chg_vinmin_set(struct qpnp_chg_chip *chip, int voltage)
 			|| voltage > QPNP_CHG_VINMIN_MAX_MV) {
 		pr_err("bad mV=%d asked to set\n", voltage);
 		return -EINVAL;
+	}
+	if (of_machine_is_compatible("nokia,martini")) {
+		/* PM8941 encodes 4.0 V as 0x0c, then 50 mV per step. */
+		if (voltage >= QPNP_CHG_VINMIN_HIGH_MIN_MV)
+			temp = QPNP_CHG_VINMIN_HIGH_MIN_VAL +
+				(voltage - QPNP_CHG_VINMIN_HIGH_MIN_MV) /
+				QPNP_CHG_VINMIN_STEP_HIGH_MV;
+		else
+			temp = 0x0c + (min(voltage, 5500) - 4000) /
+				QPNP_CHG_VINMIN_STEP_MV;
+		return qpnp_chg_masked_write(chip,
+				chip->chgr_base + CHGR_VIN_MIN, 0x3f, temp, 1);
 	}
 	if (voltage >= QPNP_CHG_VINMIN_HIGH_MIN_MV) {
 		temp = QPNP_CHG_VINMIN_HIGH_MIN_VAL;
@@ -2369,6 +2435,20 @@ qpnp_chg_request_irqs(struct qpnp_chg_chip *chip)
 			enable_irq_wake(chip->chg_failed.irq);
 			qpnp_chg_disable_irq(&chip->chg_vbatdet_lo);
 			enable_irq_wake(chip->chg_vbatdet_lo.irq);
+			if (of_machine_is_compatible("nokia,martini")) {
+				chip->chg_wdog.irq = spmi_get_irq_byname(spmi,
+						spmi_resource, "chgwdog");
+				if (chip->chg_wdog.irq >= 0) {
+					rc |= devm_request_irq(chip->dev,
+						chip->chg_wdog.irq,
+						qpnp_chg_chgr_chgwdog_irq_handler,
+						IRQF_TRIGGER_RISING,
+						"chgwdog", chip);
+					if (rc >= 0)
+						enable_irq_wake(
+							chip->chg_wdog.irq);
+				}
+			}
 
 			break;
 		case SMBB_BAT_IF_SUBTYPE:
@@ -2516,7 +2596,10 @@ qpnp_chg_hwinit(struct qpnp_chg_chip *chip, u8 subtype,
 
 		/* HACK: Disable wdog */
 		rc = qpnp_chg_masked_write(chip, chip->chgr_base + 0x62,
-			0xFF, 0xA0, 1);
+			0xFF,
+			of_machine_is_compatible("nokia,martini") ?
+				CHGR_WDOG_DEFAULT_TIME_SEC : 0xA0, 1);
+		qpnp_chg_pet_wdog(chip);
 
 		/* HACK: use analog EOC */
 		rc = qpnp_chg_masked_write(chip, chip->chgr_base +
@@ -2874,6 +2957,7 @@ qpnp_charger_probe(struct spmi_device *spmi)
 
 	chip->dev = &(spmi->dev);
 	chip->spmi = spmi;
+	INIT_DELAYED_WORK(&chip->wdog_work, qpnp_chg_wdog_work);
 
 	chip->usb_psy = power_supply_get_by_name("usb");
 	if (!chip->usb_psy) {
@@ -3185,6 +3269,7 @@ unregister_batt:
 	if (chip->bat_if_base)
 		power_supply_unregister(&chip->batt_psy);
 fail_chg_enable:
+	cancel_delayed_work_sync(&chip->wdog_work);
 	regulator_unregister(chip->otg_vreg.rdev);
 	regulator_unregister(chip->boost_vreg.rdev);
 	kfree(chip->thermal_mitigation);
@@ -3203,6 +3288,7 @@ qpnp_charger_remove(struct spmi_device *spmi)
 	}
 	cancel_work_sync(&chip->adc_measure_work);
 	cancel_delayed_work_sync(&chip->eoc_work);
+	cancel_delayed_work_sync(&chip->wdog_work);
 
 	regulator_unregister(chip->otg_vreg.rdev);
 	regulator_unregister(chip->boost_vreg.rdev);
@@ -3218,6 +3304,7 @@ static int qpnp_chg_resume(struct device *dev)
 	struct qpnp_chg_chip *chip = dev_get_drvdata(dev);
 	int rc = 0;
 
+	qpnp_chg_pet_wdog(chip);
 	if (chip->bat_if_base) {
 		rc = qpnp_chg_masked_write(chip,
 			chip->bat_if_base + BAT_IF_VREF_BAT_THM_CTRL,
