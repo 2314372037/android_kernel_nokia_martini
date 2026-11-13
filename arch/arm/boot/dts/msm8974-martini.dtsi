@@ -372,8 +372,11 @@
 
 &pm8941_bms {
 	qcom,batt-type = <5>; /* BATT_BV_5QW */
-	/* BV-5QW characterization ceiling from BATTERY.PROVISION. */
+	/* BV-5QW characterization from BATTERY.PROVISION and battery.json. */
 	qcom,max-voltage-uv = <4350000>;
+	qcom,v-cutoff-uv = <3300000>;
+	qcom,low-voltage-threshold = <3320000>;
+	qcom,chg-term-ua = <150000>;
 	qcom,ignore-shutdown-soc;
 	qcom,enable-fcc-learning;
 	qcom,min-fcc-learning-soc = <20>;
@@ -387,6 +390,19 @@
 &pm8941_chg {
 	status = "ok";
 	//qcom,battery-data = <&mtp_batterydata>;
+	qcom,vddmax-mv = <4350>;
+	qcom,vddsafe-mv = <4400>;
+	qcom,vinmin-mv = <4300>;
+	qcom,ibatmax-ma = <1800>;
+	qcom,ibatsafe-ma = <2000>;
+	qcom,ibatterm-ma = <150>;
+	qcom,cool-bat-decidegc = <100>;
+	qcom,cool-bat-mv = <4250>;
+	qcom,ibatmax-cool-ma = <900>;
+	qcom,warm-bat-decidegc = <450>;
+	qcom,warm-bat-mv = <4250>;
+	qcom,ibatmax-warm-ma = <900>;
+	qcom,vbatdet-delta-mv = <100>;
 
 	qcom,chgr@1000 {
 		status = "ok";

@@ -101,4 +101,5 @@ struct bms_battery_data bv_5qw_data = {
 	.pc_temp_ocv_lut	= &pc_temp_ocv,
 	.rbatt_sf_lut		= &rbatt_sf,
 	.default_rbatt_mohm	= 132,
+	.flat_ocv_threshold_uv	= 3800000,
 };

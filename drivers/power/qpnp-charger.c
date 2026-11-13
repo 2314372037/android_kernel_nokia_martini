@@ -2604,7 +2604,8 @@ qpnp_chg_hwinit(struct qpnp_chg_chip *chip, u8 subtype,
 		/* HACK: use analog EOC */
 		rc = qpnp_chg_masked_write(chip, chip->chgr_base +
 			CHGR_IBAT_TERM_CHGR,
-			0xFF, 0x08, 1);
+			of_machine_is_compatible("nokia,martini") ?
+				~QPNP_CHG_ITERM_MASK : 0xFF, 0x08, 1);
 
 		break;
 	case SMBB_BUCK_SUBTYPE:
