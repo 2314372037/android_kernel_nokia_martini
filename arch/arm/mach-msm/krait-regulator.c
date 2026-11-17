@@ -311,6 +311,9 @@ static int set_krait_ldo_uv(struct krait_power_vreg *kvreg, int uV)
 
 static int __krait_power_mdd_enable(struct krait_power_vreg *kvreg, bool on)
 {
+	if (!on && of_machine_is_compatible("nokia,martini"))
+		return 0;
+
 	if (on) {
 		writel_relaxed(0x00000002, kvreg->mdd_base + MDD_MODE);
 		/* complete the above write before the delay */

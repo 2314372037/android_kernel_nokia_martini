@@ -45,6 +45,7 @@
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/outercache.h>
+#include <asm/smp_plat.h>
 #ifdef CONFIG_VFP
 #include <asm/vfp.h>
 #endif
@@ -134,6 +135,7 @@ static bool msm_no_ramp_down_pc;
 static struct msm_pm_sleep_status_data *msm_pm_slp_sts;
 static bool msm_pm_pc_reset_timer;
 static struct clk *pnoc_clk;
+extern volatile int pen_release;
 
 static int msm_pm_get_pc_mode(struct device_node *node,
 		const char *key, uint32_t *pc_mode_val)
@@ -964,6 +966,9 @@ int msm_pm_wait_cpu_shutdown(unsigned int cpu)
 {
 	int timeout = 0;
 
+	if (of_machine_is_compatible("nokia,martini"))
+		return 0;
+
 	if (!msm_pm_slp_sts)
 		return 0;
 	if (!msm_pm_slp_sts[cpu].base_addr)
@@ -990,6 +995,20 @@ void msm_pm_cpu_enter_lowpower(unsigned int cpu)
 {
 	int i;
 	bool allow[MSM_PM_SLEEP_MODE_NR];
+
+	if (of_machine_is_compatible("nokia,martini")) {
+		if (pen_release == cpu_logical_map(cpu))
+			return;
+		msm_pm_swfi();
+		if (pen_release != cpu_logical_map(cpu)) {
+			u32 irqstat = readl_relaxed(MSM_QGIC_CPU_BASE +
+						    GIC_CPU_INTACK);
+			if ((irqstat & 0x3ff) < 1020)
+				writel_relaxed(irqstat, MSM_QGIC_CPU_BASE +
+							GIC_CPU_EOI);
+		}
+		return;
+	}
 
 	for (i = 0; i < MSM_PM_SLEEP_MODE_NR; i++) {
 		struct msm_pm_platform_data *mode;
@@ -1380,6 +1399,45 @@ static int __init msm_pm_init(void)
 		MSM_PM_STAT_IDLE_POWER_COLLAPSE,
 		MSM_PM_STAT_SUSPEND,
 	};
+
+	if (of_machine_is_compatible("nokia,martini")) {
+		unsigned int cpu;
+
+		for_each_possible_cpu(cpu) {
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_POWER_COLLAPSE)].idle_supported = 0;
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_POWER_COLLAPSE)].suspend_supported = 0;
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_POWER_COLLAPSE)].idle_enabled = 0;
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_POWER_COLLAPSE)].suspend_enabled = 0;
+
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE)].idle_supported = 0;
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE)].suspend_supported = 0;
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE)].idle_enabled = 0;
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE)].suspend_enabled = 0;
+
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_RETENTION)].suspend_supported = 0;
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_RETENTION)].suspend_enabled = 0;
+
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_WAIT_FOR_INTERRUPT)].suspend_supported = 1;
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_WAIT_FOR_INTERRUPT)].suspend_enabled = 1;
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_WAIT_FOR_INTERRUPT)].idle_supported = 1;
+			msm_pm_sleep_modes[MSM_PM_MODE(cpu,
+				MSM_PM_SLEEP_MODE_WAIT_FOR_INTERRUPT)].idle_enabled = 1;
+		}
+	}
+
 	msm_pm_mode_sysfs_add();
 	msm_pm_add_stats(enable_stats, ARRAY_SIZE(enable_stats));
 	suspend_set_ops(&msm_pm_ops);
