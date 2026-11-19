@@ -192,6 +192,12 @@ static struct gpiomux_setting wcnss_5wire_active_cfg = {
 	.pull = GPIOMUX_PULL_DOWN,
 };
 
+static struct gpiomux_setting wcnss_bt_fm_active_cfg = {
+	.func = GPIOMUX_FUNC_1,
+	.drv  = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_DOWN,
+};
+
 static struct gpiomux_setting ath_gpio_active_cfg = {
 	.func = GPIOMUX_FUNC_GPIO,
 	.drv = GPIOMUX_DRV_2MA,
@@ -981,6 +987,44 @@ static struct msm_gpiomux_config wcnss_5wire_interface[] = {
 	},
 };
 
+static struct msm_gpiomux_config wcnss_bt_fm_interface[] = {
+	{
+		.gpio = 35,	/* BT_SSBI */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &wcnss_bt_fm_active_cfg,
+			[GPIOMUX_SUSPENDED] = &wcnss_bt_fm_active_cfg,
+		},
+	},
+	{
+		.gpio = 41,	/* FM_SSBI */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &wcnss_bt_fm_active_cfg,
+			[GPIOMUX_SUSPENDED] = &wcnss_bt_fm_active_cfg,
+		},
+	},
+	{
+		.gpio = 42,	/* FM_SDI */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &wcnss_bt_fm_active_cfg,
+			[GPIOMUX_SUSPENDED] = &wcnss_bt_fm_active_cfg,
+		},
+	},
+	{
+		.gpio = 43,	/* BT_CTL */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &wcnss_bt_fm_active_cfg,
+			[GPIOMUX_SUSPENDED] = &wcnss_bt_fm_active_cfg,
+		},
+	},
+	{
+		.gpio = 44,	/* BT_DATA */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &wcnss_bt_fm_active_cfg,
+			[GPIOMUX_SUSPENDED] = &wcnss_bt_fm_active_cfg,
+		},
+	},
+};
+
 
 static struct msm_gpiomux_config ath_gpio_configs[] = {
 	{
@@ -1211,13 +1255,17 @@ void __init msm_8974_init_gpiomux(void)
 	msm_gpiomux_install(msm_eth_configs, ARRAY_SIZE(msm_eth_configs));
 #endif
 	msm_gpiomux_install(msm_blsp_configs, ARRAY_SIZE(msm_blsp_configs));
-	msm_gpiomux_install(msm_blsp2_uart7_configs,
-			 ARRAY_SIZE(msm_blsp2_uart7_configs));
 	msm_gpiomux_install(wcnss_5wire_interface,
 				ARRAY_SIZE(wcnss_5wire_interface));
-	if (of_board_is_liquid())
+	if (of_board_is_liquid()) {
+		msm_gpiomux_install(msm_blsp2_uart7_configs,
+				 ARRAY_SIZE(msm_blsp2_uart7_configs));
 		msm_gpiomux_install_nowrite(ath_gpio_configs,
 					ARRAY_SIZE(ath_gpio_configs));
+	} else {
+		msm_gpiomux_install(wcnss_bt_fm_interface,
+				ARRAY_SIZE(wcnss_bt_fm_interface));
+	}
 	msm_gpiomux_install(msm8974_slimbus_config,
 			ARRAY_SIZE(msm8974_slimbus_config));
 

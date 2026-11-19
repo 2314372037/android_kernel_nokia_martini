@@ -353,7 +353,7 @@
 };
 
 &uart7 {
-	status = "ok";
+	status = "disabled";
 };
 
 &usb3 {
