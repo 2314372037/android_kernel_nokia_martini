@@ -21,6 +21,7 @@
 #include <linux/errno.h>
 #include <linux/cpufreq.h>
 #include <linux/cpu.h>
+#include <linux/of.h>
 #include <linux/regulator/consumer.h>
 #include <linux/iopoll.h>
 
@@ -1090,10 +1091,29 @@ static int __cpuinit acpuclk_cpu_callback(struct notifier_block *nfb,
 	unsigned long hot_unplug_khz = acpuclk_krait_data.power_collapse_khz;
 
 	switch (action & ~CPU_TASKS_FROZEN) {
+	case CPU_DOWN_PREPARE:
+		if (of_machine_is_compatible("nokia,martini")) {
+			prev_khz[cpu] = acpuclk_krait_get_rate(cpu);
+			acpuclk_krait_set_rate(cpu, hot_unplug_khz,
+					       SETRATE_CPUFREQ);
+		}
+		break;
+	case CPU_DOWN_FAILED:
+		if (of_machine_is_compatible("nokia,martini") &&
+				prev_khz[cpu]) {
+			acpuclk_krait_set_rate(cpu, prev_khz[cpu],
+					       SETRATE_CPUFREQ);
+		}
+		break;
 	case CPU_DEAD:
+		if (of_machine_is_compatible("nokia,martini"))
+			break;
 		prev_khz[cpu] = acpuclk_krait_get_rate(cpu);
 		/* Fall through. */
 	case CPU_UP_CANCELED:
+		if (of_machine_is_compatible("nokia,martini") &&
+				sc->initialized)
+			break;
 		acpuclk_krait_set_rate(cpu, hot_unplug_khz, SETRATE_HOTPLUG);
 
 		regulator_disable(sc->vreg[VREG_CORE].reg);
@@ -1108,6 +1128,8 @@ static int __cpuinit acpuclk_cpu_callback(struct notifier_block *nfb,
 				return NOTIFY_BAD;
 			break;
 		}
+		if (of_machine_is_compatible("nokia,martini"))
+			break;
 		if (WARN_ON(!prev_khz[cpu]))
 			return NOTIFY_BAD;
 
@@ -1125,6 +1147,13 @@ static int __cpuinit acpuclk_cpu_callback(struct notifier_block *nfb,
 			return NOTIFY_BAD;
 
 		acpuclk_krait_set_rate(cpu, prev_khz[cpu], SETRATE_HOTPLUG);
+		break;
+	case CPU_ONLINE:
+		if (of_machine_is_compatible("nokia,martini") &&
+				prev_khz[cpu]) {
+			acpuclk_krait_set_rate(cpu, prev_khz[cpu],
+					       SETRATE_CPUFREQ);
+		}
 		break;
 	default:
 		break;

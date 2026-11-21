@@ -136,6 +136,7 @@ static struct msm_pm_sleep_status_data *msm_pm_slp_sts;
 static bool msm_pm_pc_reset_timer;
 static struct clk *pnoc_clk;
 extern volatile int pen_release;
+static atomic_t martini_cpu_parked[NR_CPUS];
 
 static int msm_pm_get_pc_mode(struct device_node *node,
 		const char *key, uint32_t *pc_mode_val)
@@ -966,8 +967,17 @@ int msm_pm_wait_cpu_shutdown(unsigned int cpu)
 {
 	int timeout = 0;
 
-	if (of_machine_is_compatible("nokia,martini"))
+	if (of_machine_is_compatible("nokia,martini")) {
+		while (!atomic_read(&martini_cpu_parked[cpu])) {
+			udelay(10);
+			if (++timeout >= 1000) {
+				pr_warn("%s: CPU%u did not enter WFI within 10ms\n",
+					__func__, cpu);
+				break;
+			}
+		}
 		return 0;
+	}
 
 	if (!msm_pm_slp_sts)
 		return 0;
@@ -997,15 +1007,28 @@ void msm_pm_cpu_enter_lowpower(unsigned int cpu)
 	bool allow[MSM_PM_SLEEP_MODE_NR];
 
 	if (of_machine_is_compatible("nokia,martini")) {
-		if (pen_release == cpu_logical_map(cpu))
+		u32 irqstat;
+
+		smp_rmb();
+		if (pen_release == cpu_logical_map(cpu)) {
+			atomic_set(&martini_cpu_parked[cpu], 0);
+			smp_wmb();
 			return;
+		}
+
+		atomic_set(&martini_cpu_parked[cpu], 1);
+		smp_wmb();
 		msm_pm_swfi();
-		if (pen_release != cpu_logical_map(cpu)) {
-			u32 irqstat = readl_relaxed(MSM_QGIC_CPU_BASE +
-						    GIC_CPU_INTACK);
-			if ((irqstat & 0x3ff) < 1020)
-				writel_relaxed(irqstat, MSM_QGIC_CPU_BASE +
-							GIC_CPU_EOI);
+
+		irqstat = readl_relaxed(MSM_QGIC_CPU_BASE + GIC_CPU_INTACK);
+		if ((irqstat & 0x3ff) < 1020)
+			writel_relaxed(irqstat, MSM_QGIC_CPU_BASE +
+						GIC_CPU_EOI);
+
+		smp_rmb();
+		if (pen_release == cpu_logical_map(cpu)) {
+			atomic_set(&martini_cpu_parked[cpu], 0);
+			smp_wmb();
 		}
 		return;
 	}
@@ -1167,6 +1190,9 @@ void msm_pm_set_sleep_ops(struct msm_pm_sleep_ops *ops)
 
 int msm_suspend_prepare(void)
 {
+	if (of_machine_is_compatible("nokia,martini"))
+		return 0;
+
 	if (pnoc_clk != NULL)
 		clk_disable_unprepare(pnoc_clk);
 	return 0;
@@ -1174,6 +1200,9 @@ int msm_suspend_prepare(void)
 
 void msm_suspend_wake(void)
 {
+	if (of_machine_is_compatible("nokia,martini"))
+		return;
+
 	if (pnoc_clk != NULL)
 		clk_prepare_enable(pnoc_clk);
 }

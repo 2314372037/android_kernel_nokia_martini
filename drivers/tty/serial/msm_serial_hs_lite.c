@@ -1891,13 +1891,12 @@ static int msm_serial_hsl_suspend(struct device *dev)
 	port = get_port_from_line(get_line(pdev));
 
 	if (port) {
-
-		if (is_console(port))
-			msm_hsl_deinit_clock(port);
-
 		uart_suspend_port(&msm_hsl_uart_driver, port);
 		if (device_may_wakeup(dev))
 			enable_irq_wake(port->irq);
+
+		if (is_console(port) && console_suspend_enabled)
+			msm_hsl_deinit_clock(port);
 	}
 
 	return 0;
@@ -1910,13 +1909,12 @@ static int msm_serial_hsl_resume(struct device *dev)
 	port = get_port_from_line(get_line(pdev));
 
 	if (port) {
+		if (is_console(port) && console_suspend_enabled)
+			msm_hsl_init_clock(port);
 
 		uart_resume_port(&msm_hsl_uart_driver, port);
 		if (device_may_wakeup(dev))
 			disable_irq_wake(port->irq);
-
-		if (is_console(port))
-			msm_hsl_init_clock(port);
 	}
 
 	return 0;
